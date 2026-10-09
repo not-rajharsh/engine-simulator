@@ -524,7 +524,7 @@ class AudioSynthesizer:
         am = (0.7 + 0.3 * np.sin(sp * 0.06)).astype(np.float32)
         out += np.sin(sp).astype(np.float32) * am * self._ramp("starter", stg, N)
 
-        # ---- one-shots: crunch, BOV, backfire, stall, failure -------------------- #
+                # ---- one-shots: crunch, BOV, backfire, stall, failure -------------------- #
         while self.events:
             name, amp = self.events.popleft()
             arr = self.shots.get(name)
@@ -532,13 +532,16 @@ class AudioSynthesizer:
                 arr = arr[int(self.rng.integers(0, len(arr)))]
             if arr is not None:
                 self.active.append([arr, 0, amp])
-        for sh in list(self.active):
-            arr, pos, g = sh
+        # NOTE: iterate by index and pop() -- never list.remove() with numpy
+        # arrays inside the items, because == becomes element-wise and raises
+        # ValueError when two one-shots have different lengths.
+        for i in range(len(self.active) - 1, -1, -1):
+            arr, pos, g = self.active[i]
             seg = arr[pos:pos + N]
             out[:len(seg)] += seg * g
-            sh[1] += N
-            if sh[1] >= len(arr):
-                self.active.remove(sh)
+            self.active[i][1] += N
+            if self.active[i][1] >= len(arr):
+                self.active.pop(i)
 
         mix = np.tanh(out * 1.6) * 0.9
         self.scope = mix
@@ -565,6 +568,9 @@ class AudioSynthesizer:
                     time.sleep(0.003)
             except pygame.error:
                 break
+            except Exception as exc:
+                print(f"[audio] render error: {exc!r}")
+                time.sleep(0.005)
 
     def start(self):
         if self.enabled and not self._alive:
